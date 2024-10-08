@@ -34,3 +34,17 @@ Jede der beiden Applikationen folgt folgender Projektstruktur:
 ├── Makefile
 └── README.md
 ```
+
+## Programmablauf
+1. `A` liest Datei ein und interpretiert als UTF8-Bytes
+2. `A` nimmt 100 Byte Block, berechnet Hemming-Korrektur-Summen und fügt diese hinzu
+3. `A` kodiert Block mit Base64
+4. Der Base64 String wird als Subdomain in der DNS-Anfrage gesetzt und an `B` gesendet
+5. `A` fügt Netzwerkaktivität zur pcap-File hinzu
+6. `B` extrahiert Subdomain
+7. `B` decodiert den Base64 String
+8. `B` überprüft die Checksum und korrigiert evtl. Fehler 
+   1. `B` gibt `85.143.80.47` zurück, wenn die Daten erfolgreich empfangen wurden
+   2. `B` gibt `47.81.64.105` zurück, wenn die Daten nicht erfolgreich empfangen wurden
+9. `B` fügt Netzwerkaktivität zur pcap-File hinzu
+10. `B` zeigt den String als UTF8 Interpretation auf der Konsole an.
