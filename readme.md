@@ -6,12 +6,12 @@ Dieses Projekt teilt sich in zwei `C` Programme. Eines der Programme wird auf ei
 ### Programm `A` (Malware-Simulation)
 - **Textdatei einlesen**: Liest eine vorgegebene Textdatei aus.
 - **Daten codieren**: Codiert den Inhalt (z. B. mit Base64).
-- **Datenübertragung**: Sendet die codierten Daten über das Netzwerkprotokoll ICMP oder DNS.
+- **Datenübertragung**: Sendet die codierten Daten über das Netzwerkprotokoll `DNS`.
 - **Fehlererkennung und -korrektur**: Stellt die Integrität der Daten sicher und korrigiert Übertragungsfehler.
 - **Packet Capture**: Erzeugt während der Übertragung eine pcap-Datei zur Aufzeichnung der Netzwerkkommunikation.
 
 ### Programm `B` (Angreifer-Simulation)
-- **Daten empfangen**: Empfängt die codierten Daten von Programm A.
+- **Daten empfangen**: Empfängt die codierten Daten von Programm `A`.
 - **Daten decodieren**: Decodiert die empfangenen Daten zurück in Klartext.
 - **Bildschirmausgabe**: Gibt den Klartext vollständig und korrekt aus.
 - **Fehlererkennung und -korrektur**: Überprüft die Integrität der empfangenen Daten und korrigiert eventuelle Fehler.
