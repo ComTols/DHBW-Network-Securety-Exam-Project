@@ -1,6 +1,33 @@
 # Network Security Exam Project
 Dieses Projekt teilt sich in zwei `C` Programme. Eines der Programme wird auf einem Zielrechner installiert, das andere Programm empfängt die Daten der Malware.
 
+## Setup
+Verwende `MinGW` zum Kompilieren des Programms:
+1. Lade `mingw-get-setup.exe` [hier](https://sourceforge.net/projects/mingw/) herunter.
+2. Führe `mingw-get-setup.exe` als Administrator aus.
+3. Installiere `MinGW` z.B. unter diesem Pfad: `C:\MinGW`
+4. Wähle die Pakete aus, die du installieren möchtest
+   1. `mingw32-gcc` (`bin, dev, doc, lang`)
+   2. `mingw32-gcc-g++` (`bin, dev, doc`)
+   3. `mingw32-gdb` (`bin, doc`)
+   4. `mingw32-make` (`bin, doc`)
+   5. `msys-make` (`bin, doc`)
+
+![Pakete zur installation auswählen](https://github.com/ComTols/DHBW-Network-Securety-Exam-Project/blob/main/docs/src/MinGW-install.png?raw=true)
+
+5. Füge den Installationspfad den Umgebungsvariablen hinzu, z.B. `C:\MinGW\bin`. Achte darauf, dass du vorherige Installationen von C-Compiler (z.B. Cygwin) aus den Umgebungsvariablen entfernst.
+6. Starte den PC neu.
+7. Öffne das Projekt in C-Lion. Tipp: Um besser arbeiten zu können, öffne nur den Ordner `malware` oder `receiver` in C-Lion und nicht den übergeordneten Projektordner.
+8. Gehe zu File | Settings | Build, Execution, Deployment | Toolchains und stelle sicher, dass auf die korrekte Installation verwiesen wird.
+
+![Toolchain settings](https://github.com/ComTols/DHBW-Network-Securety-Exam-Project/blob/main/docs/src/MinGW-toolchains-settings.png?raw=true)
+
+9. Gehe zu File | Settings | Build, Execution, Deployment | Build Tools | Make und stelle sicher, dass auf die correlate Installation verwiesen wird. (Z.B. `C:\MinGW\bin\mingw32-make.exe`)
+10. Füge als Run-Konfiguration ein `Makefile Target` hinzu und verweise auf die jeweilige Datei, um das Programm auszuführen.
+
+![Run-Konfiguration](https://github.com/ComTols/DHBW-Network-Securety-Exam-Project/blob/main/docs/src/Run-configuration.png?raw=true)
+
+
 ## Anforderungen
 
 ### Programm `A` (Malware-Simulation)
