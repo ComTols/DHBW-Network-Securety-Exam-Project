@@ -1,4 +1,3 @@
-import math
 import threading
 import zlib
 from threading import Lock
@@ -8,6 +7,8 @@ from typing import Dict
 import scapy.packet
 from scapy.layers.dns import DNS, IP, UDP, DNSRR, DNSQR
 from scapy.sendrecv import send
+
+from receiver import CONSOLE_LOCK
 
 SUCCESS_IP_PREFIX = "85.143.80."
 ERROR_IP_PREFIX = "47.81.64."
@@ -53,23 +54,28 @@ class Handler:
         self._lock = Lock()
 
     def timeout(self):
-        print("Start timer...")
+        with CONSOLE_LOCK:
+            print("Start timer...")
         sleep(3)
         with self._lock:
-            print("Timeout, maby we are ready...")
+            with CONSOLE_LOCK:
+                print("Timeout, maby we are ready...")
             self.finished = True
             ready, errors = self.check_rady()
             if ready:
-                print("Yeah, we are ready!")
+                with CONSOLE_LOCK:
+                    print("Yeah, we are ready!")
                 # integrität prüfen und printen
                 # antworten
                 self.integrity_check(errors)
             else:
-                print("Ups, We weren't ready after all :(")
+                with CONSOLE_LOCK:
+                    print("Ups, We weren't ready after all :(")
                 self.total_error()
 
     def run(self, packet: scapy.packet.Packet, data: bytes, full_query: str):
-        print("Start handling for connection", self.identity)
+        with CONSOLE_LOCK:
+            print("Start handling for connection", self.identity)
         handler = DataHandler(self.identity, packet, data, full_query)
         received = handler.proceed_data()
 
@@ -85,7 +91,8 @@ class Handler:
             if received.num == 0:
                 if not received.crc_correct:
                     raise "metadata block incorrect, unable to repair"
-                print("Metadata received :)")
+                with CONSOLE_LOCK:
+                    print("Metadata received :)")
                 self.dataBlockCount = int.from_bytes(data[5:9], byteorder="big")
                 self.parityBlockCount = int.from_bytes(data[9:13], byteorder="big")
                 received.send_correct()
@@ -97,7 +104,8 @@ class Handler:
 
             ready, errors = self.check_rady()
             if ready:
-                print("We are ready.")
+                with CONSOLE_LOCK:
+                    print("We are ready.")
                 # integrität prüfen und printen
                 # antworten
                 self.integrity_check(errors)
@@ -126,10 +134,11 @@ class Handler:
 
     def integrity_check(self, errors: int):
         if errors == 0:
-            for key in self.received_data:
-                self.received_data[key].send_correct()
-                print(self.received_data[key].content.decode("utf-8"), end="")
-            self.finished = True
+            with CONSOLE_LOCK:
+                for key in self.received_data:
+                    self.received_data[key].send_correct()
+                    print(self.received_data[key].content.decode("utf-8"), end="")
+                self.finished = True
             return
 
         # TODO: Solomon rekonstruktion
@@ -162,7 +171,8 @@ class DataHandler(Handler):
 
         req.crc_correct = calculate_crc32(self.data[:-4]) == self.data[-4:]
 
-        print("Get request data", req.__dict__)
+        with CONSOLE_LOCK:
+            print("Get request data", req.__dict__)
 
         return req
 
