@@ -8,7 +8,7 @@ from scapy.layers.dns import DNS, IP, UDP, DNSRR, DNSQR
 from handler import Handler
 
 DOMAIN = ("uvebeenhacked", "org")
-CONNECTIONS: Dict[int, Handler]
+CONNECTIONS: Dict[int, Handler] ={}
 
 
 def get_id(data: bytes) -> int:
@@ -23,6 +23,7 @@ def process_packet(packet: scapy.packet.Packet):
         subs = query_name.split(".")
         # Check if domain is what we´re looking for
         if subs[-3] == DOMAIN[0] and subs[-2] == DOMAIN[1]:
+            global CONNECTIONS
             print("Received packet, lets go...")
             # Get data from subdomain
             subdomain = ''.join(subs[:-3])

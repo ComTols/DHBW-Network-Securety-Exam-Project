@@ -1,7 +1,6 @@
 import math
 import threading
 import zlib
-from asyncio import timeout
 from threading import Lock
 from time import sleep
 from typing import Dict
@@ -42,11 +41,12 @@ class Request:
 
 class Handler:
     identity: int
-    received_data: Dict[int, Request]
+    received_data: Dict[int, Request] = {}
     dataBlockCount: int = -1
     parityBlockCount: int = -1
     _lock: Lock
     finished: bool = False
+    timer = None
 
     def __init__(self, identity: int):
         self.identity = identity
@@ -54,7 +54,7 @@ class Handler:
 
     def timeout(self):
         print("Start timer...")
-        sleep(3 * 60)
+        sleep(3)
         with self._lock:
             print("Timeout, maby we are ready...")
             self.finished = True
@@ -74,20 +74,20 @@ class Handler:
         received = handler.proceed_data()
 
         with self._lock:
-            if len(self.received_data) == 0:
-                timer = threading.Thread(target=timeout)
-                timer.start()
+            if self.timer is None:
+                self.timer = threading.Thread(target=self.timeout)
+                self.timer.start()
 
             if self.finished:
                 return
 
             # Check if metadata
             if received.num == 0:
-                if received.crc_correct:
+                if not received.crc_correct:
                     raise "metadata block incorrect, unable to repair"
                 print("Metadata received :)")
-                self.dataBlockCount = int.from_bytes(data[5:9])
-                self.parityBlockCount = int.from_bytes(data[9:13])
+                self.dataBlockCount = int.from_bytes(data[5:9], byteorder="big")
+                self.parityBlockCount = int.from_bytes(data[9:13], byteorder="big")
                 received.send_correct()
 
             # Save data
@@ -101,6 +101,7 @@ class Handler:
                 # integrität prüfen und printen
                 # antworten
                 self.integrity_check(errors)
+        self.timer.join()
 
     def check_rady(self) -> (bool, int):
         if self.dataBlockCount == -1 or self.parityBlockCount == -1 or self.received_data.get(0, None) is None:
@@ -109,7 +110,7 @@ class Handler:
         max_error = self.parityBlockCount
         errors = 0
         for i in range(self.dataBlockCount):
-            block = self.received_data.get(i, None) is None
+            block: Request = self.received_data.get(i, None)
             if block is None:
                 errors += 1
             elif not block.crc_correct:
@@ -161,7 +162,7 @@ class DataHandler(Handler):
 
         req.crc_correct = calculate_crc32(self.data[:-4]) == self.data[-4:]
 
-        print("Get request data", req)
+        print("Get request data", req.__dict__)
 
         return req
 
