@@ -42,16 +42,21 @@ class Request:
 
 
 class Handler:
-    identity: int
-    received_data: Dict[int, Request] = {}
-    dataBlockCount: int = -1
-    parityBlockCount: int = -1
-    _lock: Lock
-    finished: bool = False
-    timer = None
+    #identity: int
+    #received_data: Dict[int, Request] = {}
+    #dataBlockCount: int = -1
+    #parityBlockCount: int = -1
+    #_lock: Lock
+    #finished: bool = False
+    #timer = None
 
     def __init__(self, identity: int):
-        self.identity = identity
+        self.received_data: Dict[int, Request] = {}
+        self.dataBlockCount: int = -1
+        self.parityBlockCount: int = -1
+        self.finished: bool = False
+        self.timer = None
+        self.identity: int = identity
         self._lock = Lock()
 
     def timeout(self):
@@ -102,7 +107,8 @@ class Handler:
 
             # Save data
             if self.received_data.get(received.num, None) is not None:
-                raise "duplicate data"
+                print(self.received_data)
+                raise ValueError(str(self.identity) + " duplicate data for block "+str(received.num))
             self.received_data[received.num] = received
 
             ready, errors = self.check_rady()

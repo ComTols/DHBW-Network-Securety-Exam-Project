@@ -3,7 +3,7 @@ import threading
 from typing import Dict
 
 import scapy.packet
-from scapy.layers.dns import DNS, IP, UDP, DNSRR, DNSQR
+from scapy.layers.dns import DNS, DNSQR
 
 from handler import Handler
 from handler import CONSOLE_LOCK
@@ -33,17 +33,18 @@ def process_packet(packet: scapy.packet.Packet):
             payload: bytes = base64.urlsafe_b64decode(subdomain)
 
             # Get handler
-            handler = CONNECTIONS.get(get_id(payload), None)
+            identifier = get_id(payload)
+            handler = CONNECTIONS.get(identifier, None)
             if handler is None:
                 with CONSOLE_LOCK:
                     print("Create new handler")
-                handler = Handler(get_id(payload))
-                CONNECTIONS[get_id(payload)] = handler
+                handler = Handler(identifier)
+                CONNECTIONS[identifier] = handler
 
             if handler.finished:
                 with CONSOLE_LOCK:
                     print("This data stream was closed")
-                del CONNECTIONS[get_id(payload)]
+                del CONNECTIONS[identifier]
             # Start handler as thread
             thread = threading.Thread(target=handler.run, args=(packet, payload, query_name,))
             thread.start()
