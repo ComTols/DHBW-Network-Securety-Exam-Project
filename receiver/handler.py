@@ -29,6 +29,7 @@ class Request:
     answer_correct: IP
     answer_incorrect: IP
     answer_total_error: IP
+    is_data: bool = False
 
     def send_correct(self):
         send(self.answer_correct, verbose=0)
@@ -57,6 +58,8 @@ class Handler:
         with CONSOLE_LOCK:
             print("Start timer...")
         sleep(3)
+        if self.finished:
+            return
         with self._lock:
             with CONSOLE_LOCK:
                 print("Timeout, maby we are ready...")
@@ -77,7 +80,7 @@ class Handler:
         with CONSOLE_LOCK:
             print("Start handling for connection", self.identity)
         handler = DataHandler(self.identity, packet, data, full_query)
-        received = handler.proceed_data()
+        received = handler.proceed_data(self.dataBlockCount)
 
         with self._lock:
             if self.timer is None:
@@ -113,7 +116,7 @@ class Handler:
 
     def check_rady(self) -> (bool, int):
         if self.dataBlockCount == -1 or self.parityBlockCount == -1 or self.received_data.get(0, None) is None:
-            return False
+            return False, 0
 
         max_error = self.parityBlockCount
         errors = 0
@@ -134,17 +137,27 @@ class Handler:
 
     def integrity_check(self, errors: int):
         if errors == 0:
-            with CONSOLE_LOCK:
-                for key in self.received_data:
-                    self.received_data[key].send_correct()
-                    print(self.received_data[key].content.decode("utf-8"), end="")
-                self.finished = True
+            self.finish_print()
             return
 
         # TODO: Solomon rekonstruktion
         # Es sind genügend pakete da um die nachricht zu erhalten.
         # setzte nachricht zusammen und sende antworten
         pass
+
+    def finish_print(self):
+        with CONSOLE_LOCK:
+            if self.finished:
+                return
+            for k in range(self.dataBlockCount+1):
+                d = self.received_data.get(k, None)
+                if d is None:
+                    continue
+                if d.is_data:
+                    d.send_correct()
+                    print(d.content.decode("utf-8"), end="")
+            print()
+            self.finished = True
 
     def total_error(self):
         for key in self.received_data:
@@ -162,14 +175,25 @@ class DataHandler(Handler):
         self.data = data
         self.full_query = full_query
 
-    def proceed_data(self) -> Request:
+    def proceed_data(self, data_count: int) -> Request:
         req = Request()
-        req.content = self.data[5:-4]
         req.num = self.data[0]
+
+        if req.num == 0:
+            req.content = self.data[5:-4]
+            req.is_data = False
+            req.crc_correct = calculate_crc32(self.data[:-4]) == self.data[-4:]
+        elif req.num <= data_count:
+            req.content = self.data[5:-4]
+            req.is_data = True
+            req.crc_correct = calculate_crc32(self.data[:-4]) == self.data[-4:]
+        else:
+            req.content = self.data[5:]
+            req.is_data = False
+
         req.answer_correct = self.get_response(SUCCESS_IP_PREFIX + str(req.num))
         req.answer_incorrect = self.get_response(ERROR_IP_PREFIX + str(req.num))
-
-        req.crc_correct = calculate_crc32(self.data[:-4]) == self.data[-4:]
+        req.answer_total_error = self.get_response(ERROR_IP_PREFIX + "255")
 
         with CONSOLE_LOCK:
             print("Get request data", req.__dict__)
