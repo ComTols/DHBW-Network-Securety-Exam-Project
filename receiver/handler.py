@@ -118,9 +118,12 @@ class Handler:
         if self.dataBlockCount == -1 or self.parityBlockCount == -1 or self.received_data.get(0, None) is None:
             return False, 0
 
+        with CONSOLE_LOCK:
+            print("Es sind schon da:", self.received_data.keys())
+
         max_error = self.parityBlockCount
         errors = 0
-        for i in range(self.dataBlockCount):
+        for i in range(self.dataBlockCount+1):
             block: Request = self.received_data.get(i, None)
             if block is None:
                 errors += 1
@@ -153,6 +156,8 @@ class Handler:
                 d = self.received_data.get(k, None)
                 if d is None:
                     continue
+                if d.num == self.dataBlockCount:
+                    d.content = d.content.rstrip(b'\x00')
                 if d.is_data:
                     d.send_correct()
                     print(d.content.decode("utf-8"), end="")
