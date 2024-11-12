@@ -9,16 +9,13 @@ import scapy.packet
 from scapy.layers.dns import DNS, IP, UDP, DNSRR, DNSQR
 from scapy.sendrecv import send
 
-
 SUCCESS_IP_PREFIX = "85.143.80."
 ERROR_IP_PREFIX = "47.81.64."
 CONSOLE_LOCK = threading.Lock()
 
 
 def calculate_crc32(data: bytes) -> bytes:
-    # Berechne den CRC32-Wert
-    crc_value = zlib.crc32(data) & 0xFFFFFFFF  # CRC32 berechnen und sicherstellen, dass es ein 32-Bit-Wert ist
-    # Wandle den CRC-Wert in 4 Bytes im Big-Endian-Format um
+    crc_value = zlib.crc32(data) & 0xFFFFFFFF
     crc_bytes = crc_value.to_bytes(4, byteorder='big')
     return crc_bytes
 
@@ -43,13 +40,6 @@ class Request:
 
 
 class Handler:
-    #identity: int
-    #received_data: Dict[int, Request] = {}
-    #dataBlockCount: int = -1
-    #parityBlockCount: int = -1
-    #_lock: Lock
-    #finished: bool = False
-    #timer = None
 
     def __init__(self, identity: int):
         self.received_data: Dict[int, Request] = {}
@@ -69,7 +59,6 @@ class Handler:
         with self._lock:
             with CONSOLE_LOCK:
                 print("Timeout, maby we are ready...")
-            self.finished = True
             ready, errors = self.check_rady()
             if ready:
                 with CONSOLE_LOCK:
@@ -81,6 +70,7 @@ class Handler:
                 with CONSOLE_LOCK:
                     print("Ups, We weren't ready after all :(")
                 self.total_error()
+            self.finished = True
 
     def run(self, packet: scapy.packet.Packet, data: bytes, full_query: str):
         with CONSOLE_LOCK:
@@ -109,16 +99,15 @@ class Handler:
             # Save data
             if self.received_data.get(received.num, None) is not None:
                 print(self.received_data)
-                raise ValueError(str(self.identity) + " duplicate data for block "+str(received.num))
+                raise ValueError(str(self.identity) + " duplicate data for block " + str(received.num))
             self.received_data[received.num] = received
 
-            ready, errors = self.check_rady()
-            if ready:
+            if len(self.received_data) == self.dataBlockCount + self.parityBlockCount + 1:
                 with CONSOLE_LOCK:
                     print("We are ready.")
                 # integrität prüfen und printen
                 # antworten
-                self.integrity_check(errors)
+                self.integrity_check(0)
         self.timer.join()
 
     def check_rady(self) -> (bool, int):
@@ -130,7 +119,7 @@ class Handler:
 
         max_error = self.parityBlockCount
         errors = 0
-        for i in range(self.dataBlockCount+self.parityBlockCount+1):
+        for i in range(self.dataBlockCount + self.parityBlockCount + 1):
             block: Request = self.received_data.get(i, None)
             if block is None:
                 errors += 1
@@ -151,7 +140,7 @@ class Handler:
         with CONSOLE_LOCK:
             print("recover with errors:", errors)
         blocks = []
-        for i in range(1, self.dataBlockCount+self.parityBlockCount+1):
+        for i in range(1, self.dataBlockCount + self.parityBlockCount + 1):
             n = (self.received_data.get(i, None))
             if n is not None:
                 n = n.content
@@ -161,53 +150,45 @@ class Handler:
         self.finish_print(recovered_data)
 
     def reed_solomon_erasure_recover(self, data_blocks: List[Optional[bytes]]) -> List[bytes]:
-        """
-        Erasure Code Mode Recovery using Reed-Solomon algorithm.
-
-        Args:
-            data_blocks (List[Optional[bytes]]): The list of data blocks, including `None` for missing blocks.
-            parity_blocks (int): The number of parity blocks available for error recovery.
-
-        Returns:
-            List[bytes]: The recovered data blocks (original order).
-        """
-        parity_blocks = self.parityBlockCount
-
         with CONSOLE_LOCK:
-            print("Recover this data:", data_blocks)
+            print("repairing this data:", data_blocks)
+        parity_blocks = self.parityBlockCount
         # Total number of blocks: data + parity
         total_blocks = len(data_blocks)
 
-        # Create RSCodec instance with the number of parity blocks
+        # Create RSCodec instance with the total number of parity blocks
         rsc = RSCodec(parity_blocks)
 
-        # Convert data_blocks to list of bytes, substituting missing data with a placeholder
-        encoded_data = bytearray()
+        # Collect the known data blocks and their positions
         erasures = []
+        encoded_data = b''
         for i, block in enumerate(data_blocks):
             if block is None:
                 # Add index of missing blocks
                 erasures.append(i)
-                # Use a placeholder for the missing block
-                encoded_data.extend(b'\x00' * (len(data_blocks[0]) if data_blocks[0] else 1))
             else:
-                # Add the block
-                encoded_data.extend(block)
+                # Add the block to the encoded data
+                encoded_data += block
 
         # Recover the message
-        recovered_data = rsc.decode(encoded_data, erase_pos=erasures)
+        try:
+            rmes, _, _ = rsc.decode(encoded_data, erase_pos=erasures)
+        except Exception as e:
+            with CONSOLE_LOCK:
+                print("Reed-Solomon decoding failed:", str(e))
+            return data_blocks  # Return original blocks if recovery fails
 
         # Split recovered data into original block size
-        block_size = len(data_blocks[0]) if data_blocks[0] else len(recovered_data) // total_blocks
-        return [recovered_data[i:i + block_size] for i in range(0, len(recovered_data), block_size)]
+        block_size = len(data_blocks[0]) if data_blocks[0] else len(rmes) // total_blocks
+        return [rmes[i:i + block_size] for i in range(0, len(rmes), block_size)]
 
-    def finish_print(self, rdata: List[bytes]=None):
+    def finish_print(self, rdata: List[bytes] = None):
         if rdata is None:
             return
         with CONSOLE_LOCK:
             if self.finished:
                 return
-            for k in range(self.dataBlockCount+1):
+            for k in range(self.dataBlockCount + 1):
                 d = self.received_data.get(k, None)
                 if d is None:
                     continue
