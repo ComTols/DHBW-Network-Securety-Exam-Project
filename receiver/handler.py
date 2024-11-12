@@ -81,6 +81,7 @@ class Handler:
                 with CONSOLE_LOCK:
                     print("Ups, We weren't ready after all :(")
                 self.total_error()
+            self.finished = True
 
     def run(self, packet: scapy.packet.Packet, data: bytes, full_query: str):
         with CONSOLE_LOCK:
@@ -158,64 +159,72 @@ class Handler:
             blocks.append(n)
 
         recovered_data = self.reed_solomon_erasure_recover(blocks)
+        with CONSOLE_LOCK:
+            print("data repaired:", recovered_data)
+        if None in recovered_data:
+            print("data not repaired, aborting")
+            return
         self.finish_print(recovered_data)
 
     def reed_solomon_erasure_recover(self, data_blocks: List[Optional[bytes]]) -> List[bytes]:
-        """
-        Erasure Code Mode Recovery using Reed-Solomon algorithm.
-
-        Args:
-            data_blocks (List[Optional[bytes]]): The list of data blocks, including `None` for missing blocks.
-            parity_blocks (int): The number of parity blocks available for error recovery.
-
-        Returns:
-            List[bytes]: The recovered data blocks (original order).
-        """
+        with CONSOLE_LOCK:
+            print("repairing this data:", data_blocks)
         parity_blocks = self.parityBlockCount
 
-        with CONSOLE_LOCK:
-            print("Recover this data:", data_blocks)
-        # Total number of blocks: data + parity
-        total_blocks = len(data_blocks)
+        # Determine block size
+        block_size = max(len(block) for block in data_blocks if block is not None)
+        if block_size == 0:
+            with CONSOLE_LOCK:
+                print("Error: block_size is zero, cannot proceed with recovery.")
+            return data_blocks
+
+        # Ensure all data blocks have the same size by padding with zeros if necessary
+        padded_blocks = [block.ljust(block_size, b'\x00') if block is not None else b'\x00' * block_size for block in
+                         data_blocks]
 
         # Create RSCodec instance with the number of parity blocks
         rsc = RSCodec(parity_blocks)
 
-        # Convert data_blocks to list of bytes, substituting missing data with a placeholder
-        encoded_data = bytearray()
-        erasures = []
-        for i, block in enumerate(data_blocks):
-            if block is None:
-                # Add index of missing blocks
-                erasures.append(i)
-                # Use a placeholder for the missing block
-                encoded_data.extend(b'\x00' * (len(data_blocks[0]) if data_blocks[0] else 1))
-            else:
-                # Add the block
-                encoded_data.extend(block)
+        # Collect the known data blocks and their positions
+        erasures = [i for i, block in enumerate(data_blocks) if block is None]
+
+        # Concatenate the encoded data for decoding
+        encoded_data_bytes = b''.join(padded_blocks)
 
         # Recover the message
-        recovered_data = rsc.decode(encoded_data, erase_pos=erasures)
+        try:
+            rmes, _, _ = rsc.decode(encoded_data_bytes, nsym=parity_blocks, erase_pos=erasures)
+            # Convert bytearray to bytes
+            rmes = bytes(rmes)
+        except Exception as e:
+            with CONSOLE_LOCK:
+                print("Reed-Solomon decoding failed:", str(e))
+            return data_blocks  # Return original blocks if recovery fails
 
         # Split recovered data into original block size
-        block_size = len(data_blocks[0]) if data_blocks[0] else len(recovered_data) // total_blocks
-        return [recovered_data[i:i + block_size] for i in range(0, len(recovered_data), block_size)]
+        return [rmes[i:i + block_size] for i in range(0, len(rmes), block_size)]
 
     def finish_print(self, rdata: List[bytes]=None):
-        if rdata is None:
+        if self.finished:
             return
         with CONSOLE_LOCK:
-            if self.finished:
-                return
-            for k in range(self.dataBlockCount+1):
-                d = self.received_data.get(k, None)
-                if d is None:
-                    continue
-                if d.num == self.dataBlockCount:
-                    d.content = d.content.rstrip(b'\x00')
-                if d.is_data:
-                    d.send_correct()
-                    print(d.content.decode("utf-8"), end="")
+            if rdata is not None:
+                txt = b''.join(rdata)
+                try:
+                    print(txt.decode("utf-8"), end="")
+                except UnicodeDecodeError:
+                    print("unable to print data")
+                    return
+            else:
+                for k in range(self.dataBlockCount+1):
+                    d = self.received_data.get(k, None)
+                    if d is None:
+                        continue
+                    if d.num == self.dataBlockCount:
+                        d.content = d.content.rstrip(b'\x00')
+                    if d.is_data:
+                        d.send_correct()
+                        print(d.content.decode("utf-8"), end="")
             print()
             self.finished = True
 
