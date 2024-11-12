@@ -6,10 +6,11 @@ import scapy.packet
 from scapy.layers.dns import DNS, IP, UDP, DNSRR, DNSQR
 
 from handler import Handler
+from handler import CONSOLE_LOCK
+
 
 DOMAIN = ("uvebeenhacked", "org")
 CONNECTIONS: Dict[int, Handler] ={}
-CONSOLE_LOCK = threading.Lock()
 
 
 def get_id(data: bytes) -> int:

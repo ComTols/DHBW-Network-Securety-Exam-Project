@@ -8,10 +8,10 @@ import scapy.packet
 from scapy.layers.dns import DNS, IP, UDP, DNSRR, DNSQR
 from scapy.sendrecv import send
 
-from receiver import CONSOLE_LOCK
 
 SUCCESS_IP_PREFIX = "85.143.80."
 ERROR_IP_PREFIX = "47.81.64."
+CONSOLE_LOCK = threading.Lock()
 
 
 def calculate_crc32(data: bytes) -> bytes:
