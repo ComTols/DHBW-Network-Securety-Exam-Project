@@ -3,7 +3,8 @@ import zlib
 from threading import Lock
 from time import sleep
 from typing import Dict
-
+from reedsolo import RSCodec
+from typing import List, Optional
 import scapy.packet
 from scapy.layers.dns import DNS, IP, UDP, DNSRR, DNSQR
 from scapy.sendrecv import send
@@ -129,17 +130,15 @@ class Handler:
 
         max_error = self.parityBlockCount
         errors = 0
-        for i in range(self.dataBlockCount+1):
+        for i in range(self.dataBlockCount+self.parityBlockCount+1):
             block: Request = self.received_data.get(i, None)
             if block is None:
                 errors += 1
-            elif not block.crc_correct:
+            elif block.is_data and not block.crc_correct:
                 errors += 1
+                block.send_incorrect()
+                del self.received_data[i]
             if errors > max_error:
-                return False, errors
-
-        for i in range(self.dataBlockCount, self.dataBlockCount + self.parityBlockCount):
-            if self.received_data.get(i, None) is None:
                 return False, errors
 
         return True, errors
@@ -149,12 +148,62 @@ class Handler:
             self.finish_print()
             return
 
-        # TODO: Solomon rekonstruktion
-        # Es sind genügend pakete da um die nachricht zu erhalten.
-        # setzte nachricht zusammen und sende antworten
-        pass
+        with CONSOLE_LOCK:
+            print("recover with errors:", errors)
+        blocks = []
+        for i in range(1, self.dataBlockCount+self.parityBlockCount+1):
+            n = (self.received_data.get(i, None))
+            if n is not None:
+                n = n.content
+            blocks.append(n)
 
-    def finish_print(self):
+        recovered_data = self.reed_solomon_erasure_recover(blocks)
+        self.finish_print(recovered_data)
+
+    def reed_solomon_erasure_recover(self, data_blocks: List[Optional[bytes]]) -> List[bytes]:
+        """
+        Erasure Code Mode Recovery using Reed-Solomon algorithm.
+
+        Args:
+            data_blocks (List[Optional[bytes]]): The list of data blocks, including `None` for missing blocks.
+            parity_blocks (int): The number of parity blocks available for error recovery.
+
+        Returns:
+            List[bytes]: The recovered data blocks (original order).
+        """
+        parity_blocks = self.parityBlockCount
+
+        with CONSOLE_LOCK:
+            print("Recover this data:", data_blocks)
+        # Total number of blocks: data + parity
+        total_blocks = len(data_blocks)
+
+        # Create RSCodec instance with the number of parity blocks
+        rsc = RSCodec(parity_blocks)
+
+        # Convert data_blocks to list of bytes, substituting missing data with a placeholder
+        encoded_data = bytearray()
+        erasures = []
+        for i, block in enumerate(data_blocks):
+            if block is None:
+                # Add index of missing blocks
+                erasures.append(i)
+                # Use a placeholder for the missing block
+                encoded_data.extend(b'\x00' * (len(data_blocks[0]) if data_blocks[0] else 1))
+            else:
+                # Add the block
+                encoded_data.extend(block)
+
+        # Recover the message
+        recovered_data = rsc.decode(encoded_data, erase_pos=erasures)
+
+        # Split recovered data into original block size
+        block_size = len(data_blocks[0]) if data_blocks[0] else len(recovered_data) // total_blocks
+        return [recovered_data[i:i + block_size] for i in range(0, len(recovered_data), block_size)]
+
+    def finish_print(self, rdata: List[bytes]=None):
+        if rdata is None:
+            return
         with CONSOLE_LOCK:
             if self.finished:
                 return
