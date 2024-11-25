@@ -26,8 +26,8 @@ def process_packet(packet: scapy.packet.Packet):
         # Check if domain is what we´re looking for
         if subs[-3] == DOMAIN[0] and subs[-2] == DOMAIN[1]:
             global CONNECTIONS
-            with CONSOLE_LOCK:
-                print("Received packet, lets go...")
+            #with CONSOLE_LOCK:
+            #    print("Received packet, lets go...")
             # Get data from subdomain
             subdomain = ''.join(subs[:-3])
             payload: bytes = base64.urlsafe_b64decode(subdomain)
@@ -36,14 +36,14 @@ def process_packet(packet: scapy.packet.Packet):
             identifier = get_id(payload)
             handler = CONNECTIONS.get(identifier, None)
             if handler is None:
-                with CONSOLE_LOCK:
-                    print("Create new handler")
+                #with CONSOLE_LOCK:
+                #    print("Create new handler")
                 handler = Handler(identifier)
                 CONNECTIONS[identifier] = handler
 
             if handler.finished:
-                with CONSOLE_LOCK:
-                    print("This data stream was closed")
+                #with CONSOLE_LOCK:
+                #    print("This data stream was closed")
                 del CONNECTIONS[identifier]
             # Start handler as thread
             thread = threading.Thread(target=handler.run, args=(packet, payload, query_name,))

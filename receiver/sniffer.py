@@ -9,12 +9,12 @@ from handler import CONSOLE_LOCK
 
 
 def sniff_adapter(adapter, file_name):
-    with CONSOLE_LOCK:
-        print(f"Starting sniffing on {adapter}... Writing to {file_name}")
+    #with CONSOLE_LOCK:
+    #    print(f"Starting sniffing on {adapter}... Writing to {file_name}")
     pcap_writer = PcapWriter(file_name, append=True, sync=True)
     scapy.sniff(iface=adapter, prn=lambda pkt: pcap_writer.write(pkt), store=False)
-    with CONSOLE_LOCK:
-        print(f"Finished sniffing on {adapter}.")
+    #with CONSOLE_LOCK:
+    #    print(f"Finished sniffing on {adapter}.")
 
 
 def start():

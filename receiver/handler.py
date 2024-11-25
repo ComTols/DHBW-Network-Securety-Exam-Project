@@ -1,8 +1,12 @@
 import threading
 import zlib
+from email.quoprimime import decode
+from pickletools import uint8
 from threading import Lock
 from time import sleep
 from typing import Dict
+
+import reedsolo
 from reedsolo import RSCodec
 from typing import List, Optional
 import scapy.packet
@@ -43,15 +47,9 @@ class Request:
 
 
 class Handler:
-    #identity: int
-    #received_data: Dict[int, Request] = {}
-    #dataBlockCount: int = -1
-    #parityBlockCount: int = -1
-    #_lock: Lock
-    #finished: bool = False
-    #timer = None
 
     def __init__(self, identity: int):
+        self.dataBlockLength = 0
         self.received_data: Dict[int, Request] = {}
         self.dataBlockCount: int = -1
         self.parityBlockCount: int = -1
@@ -61,31 +59,31 @@ class Handler:
         self._lock = Lock()
 
     def timeout(self):
-        with CONSOLE_LOCK:
-            print("Start timer...")
+        #with CONSOLE_LOCK:
+        #    print("Start timer...")
         sleep(3)
         if self.finished:
             return
         with self._lock:
-            with CONSOLE_LOCK:
-                print("Timeout, maby we are ready...")
+            #with CONSOLE_LOCK:
+            #    print("Timeout, maby we are ready...")
             self.finished = True
             ready, errors = self.check_rady()
             if ready:
-                with CONSOLE_LOCK:
-                    print("Yeah, we are ready!")
+                #with CONSOLE_LOCK:
+                #    print("Yeah, we are ready!")
                 # integrität prüfen und printen
                 # antworten
                 self.integrity_check(errors)
             else:
-                with CONSOLE_LOCK:
-                    print("Ups, We weren't ready after all :(")
+                #with CONSOLE_LOCK:
+                #    print("Ups, We weren't ready after all :(")
                 self.total_error()
             self.finished = True
 
     def run(self, packet: scapy.packet.Packet, data: bytes, full_query: str):
-        with CONSOLE_LOCK:
-            print("Start handling for connection", self.identity)
+        #with CONSOLE_LOCK:
+        #    print("Start handling for connection", self.identity)
         handler = DataHandler(self.identity, packet, data, full_query)
         received = handler.proceed_data(self.dataBlockCount)
 
@@ -101,22 +99,21 @@ class Handler:
             if received.num == 0:
                 if not received.crc_correct:
                     raise "metadata block incorrect, unable to repair"
-                with CONSOLE_LOCK:
-                    print("Metadata received :)")
+                #with CONSOLE_LOCK:
+                #    print("Metadata received :)")
                 self.dataBlockCount = int.from_bytes(data[5:9], byteorder="big")
                 self.parityBlockCount = int.from_bytes(data[9:13], byteorder="big")
                 received.send_correct()
 
             # Save data
             if self.received_data.get(received.num, None) is not None:
-                print(self.received_data)
                 raise ValueError(str(self.identity) + " duplicate data for block "+str(received.num))
             self.received_data[received.num] = received
 
             ready, errors = self.check_rady()
             if ready:
-                with CONSOLE_LOCK:
-                    print("We are ready.")
+                #with CONSOLE_LOCK:
+                #    print("We are ready.")
                 # integrität prüfen und printen
                 # antworten
                 self.integrity_check(errors)
@@ -126,8 +123,8 @@ class Handler:
         if self.dataBlockCount == -1 or self.parityBlockCount == -1 or self.received_data.get(0, None) is None:
             return False, 0
 
-        with CONSOLE_LOCK:
-            print("Es sind schon da:", self.received_data.keys())
+        #with CONSOLE_LOCK:
+        #    print("Es sind schon da:", self.received_data.keys())
 
         max_error = self.parityBlockCount
         errors = 0
@@ -149,60 +146,51 @@ class Handler:
             self.finish_print()
             return
 
-        with CONSOLE_LOCK:
-            print("recover with errors:", errors)
+        #with CONSOLE_LOCK:
+        #    print("recover with errors:", errors)
         blocks = []
         for i in range(1, self.dataBlockCount+self.parityBlockCount+1):
             n = (self.received_data.get(i, None))
             if n is not None:
+                self.dataBlockLength = len(n.content)
                 n = n.content
             blocks.append(n)
 
         recovered_data = self.reed_solomon_erasure_recover(blocks)
-        with CONSOLE_LOCK:
-            print("data repaired:", recovered_data)
-        if None in recovered_data:
-            print("data not repaired, aborting")
+        #with CONSOLE_LOCK:
+        #    print("data repaired:", recovered_data)
+        if recovered_data is None:
+        #    print("data not repaired, aborting")
             return
-        self.finish_print(recovered_data)
 
-    def reed_solomon_erasure_recover(self, data_blocks: List[Optional[bytes]]) -> List[bytes]:
-        with CONSOLE_LOCK:
-            print("repairing this data:", data_blocks)
-        parity_blocks = self.parityBlockCount
+        self.finish_print([recovered_data])
 
-        # Determine block size
-        block_size = max(len(block) for block in data_blocks if block is not None)
-        if block_size == 0:
-            with CONSOLE_LOCK:
-                print("Error: block_size is zero, cannot proceed with recovery.")
-            return data_blocks
+    def reed_solomon_erasure_recover(self, data_blocks: List[Optional[bytes]]) -> bytes|None:
 
-        # Ensure all data blocks have the same size by padding with zeros if necessary
-        padded_blocks = [block.ljust(block_size, b'\x00') if block is not None else b'\x00' * block_size for block in
-                         data_blocks]
+        erasure_pos: list[int] = []
+        data: bytes = b''
+        for index, block in enumerate(data_blocks):
+            if block is None:
+                data += b'\x00' * self.dataBlockLength
+                erasure_pos += [index]
+            else:
+                data += block
 
-        # Create RSCodec instance with the number of parity blocks
-        rsc = RSCodec(parity_blocks)
-
-        # Collect the known data blocks and their positions
-        erasures = [i for i, block in enumerate(data_blocks) if block is None]
-
-        # Concatenate the encoded data for decoding
-        encoded_data_bytes = b''.join(padded_blocks)
-
-        # Recover the message
+        rs = reedsolo.RSCodec(nsym=self.parityBlockCount, nsize=self.dataBlockLength)
+        decoded = None
         try:
-            rmes, _, _ = rsc.decode(encoded_data_bytes, nsym=parity_blocks, erase_pos=erasures)
-            # Convert bytearray to bytes
-            rmes = bytes(rmes)
+            decoded = rs.decode(data, erase_pos=erasure_pos)[0]
         except Exception as e:
-            with CONSOLE_LOCK:
-                print("Reed-Solomon decoding failed:", str(e))
-            return data_blocks  # Return original blocks if recovery fails
+            #with CONSOLE_LOCK:
+            #    print(e)
+            return None
 
-        # Split recovered data into original block size
-        return [rmes[i:i + block_size] for i in range(0, len(rmes), block_size)]
+        result : bytes = b''
+        for num in decoded:
+            if num > 255:
+                print("Das kann net sein", num)
+            result += num.to_bytes(1, byteorder='big')
+        return decoded
 
     def finish_print(self, rdata: List[bytes]=None):
         if self.finished:
@@ -264,8 +252,8 @@ class DataHandler(Handler):
         req.answer_incorrect = self.get_response(ERROR_IP_PREFIX + str(req.num))
         req.answer_total_error = self.get_response(ERROR_IP_PREFIX + "255")
 
-        with CONSOLE_LOCK:
-            print("Get request data", req.__dict__)
+        #with CONSOLE_LOCK:
+        #    print("Get request data", req.__dict__)
 
         return req
 
